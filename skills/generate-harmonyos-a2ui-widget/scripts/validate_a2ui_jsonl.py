@@ -32,12 +32,32 @@ EXTENDED_COMPONENTS = {
     "Radio",
     "Checkbox",
     "CheckboxGroup",
+    "Select",
+    "Navigation",
+    "NavContainer",
+    "Tabs",
+    "TabContent",
+    "Web",
     "If",
     "Extended.Select",
     "Extended.Navigation",
     "Extended.Tabs",
     "Extended.TabContent",
     "Extended.Web",
+}
+LEGACY_COMPONENT_MAP = {
+    "Extended.Select": "Select",
+    "Extended.Navigation": "Navigation",
+    "Extended.Tabs": "Tabs",
+    "Extended.TabContent": "TabContent",
+    "Extended.Web": "Web",
+}
+REMOVED_EXTENDED_PREFIX = {
+    "Extended.Text": "Text",
+    "Extended.Button": "Button",
+    "Extended.Column": "Column",
+    "Extended.Row": "Row",
+    "Extended.Image": "Image",
 }
 PATH_RE = re.compile(r"^/(?:[^~/]|~[01])*(?:/(?:[^~/]|~[01])*)*$")
 
@@ -167,16 +187,16 @@ def main() -> int:
                             f"第 {number} 行：不支持的扩展组件 "
                             f"{component_type!r}"
                         )
-                    if component_type.startswith("Extended.") and component_type in {
-                        "Extended.Text",
-                        "Extended.Button",
-                        "Extended.Column",
-                        "Extended.Row",
-                        "Extended.Image",
-                    }:
+                    if component_type in REMOVED_EXTENDED_PREFIX:
                         errors.append(
-                            f"第 {number} 行：{component_type} 应使用不带 "
-                            "Extended. 前缀的原生组件名"
+                            f"第 {number} 行：{component_type} 应使用 "
+                            f"{REMOVED_EXTENDED_PREFIX[component_type]!r}"
+                        )
+                    if component_type in LEGACY_COMPONENT_MAP:
+                        warnings.append(
+                            f"第 {number} 行：{component_type} 是旧式写法；"
+                            f"更新后的聚合 Schema 使用 "
+                            f"{LEGACY_COMPONENT_MAP[component_type]!r}"
                         )
 
                 if component_type == "Text" and "text" in component:
@@ -194,6 +214,11 @@ def main() -> int:
                         f"第 {number} 行：扩展 Button {component_id!r} 应使用 "
                         "'label'，不能使用 'child'"
                     )
+                if component_type == "Select" and "onChange" in component:
+                    errors.append(
+                        f"第 {number} 行：扩展 Select {component_id!r} 应使用 "
+                        "'onSelect'，不能使用 'onChange'"
+                    )
                 if component_type in {"Row", "Column"}:
                     if "justify" in component:
                         errors.append(
@@ -205,12 +230,29 @@ def main() -> int:
                             f"第 {number} 行：扩展 {component_type} "
                             f"{component_id!r} 应使用 'alignItems'"
                         )
+                    styles = component.get("styles")
+                    if isinstance(styles, dict):
+                        for field in ("justifyContent", "alignItems"):
+                            if field in component and field in styles:
+                                warnings.append(
+                                    f"第 {number} 行：组件 {component_id!r} 同时在"
+                                    f"顶层和 styles 中设置 {field}，请只保留一种"
+                                )
                 if component_type == "Grid":
-                    columns = component.get("columnsTemplate")
-                    if isinstance(columns, str) and "repeat(" in columns:
-                        errors.append(
-                            f"第 {number} 行：Grid columnsTemplate 不支持 repeat()"
-                        )
+                    grid_styles = component.get("styles")
+                    for field in ("columnsTemplate", "rowsTemplate"):
+                        value = component.get(field)
+                        if isinstance(grid_styles, dict) and field in grid_styles:
+                            if field in component:
+                                warnings.append(
+                                    f"第 {number} 行：Grid {component_id!r} 同时在"
+                                    f"顶层和 styles 中设置 {field}，请只保留一种"
+                                )
+                            value = grid_styles.get(field)
+                        if isinstance(value, str) and "repeat(" in value:
+                            errors.append(
+                                f"第 {number} 行：Grid {field} 不支持 repeat()"
+                            )
                 if component_type == "Divider":
                     misplaced = [
                         key
@@ -236,6 +278,12 @@ def main() -> int:
                                 f"第 {number} 行：组件 {component_id!r} 的 "
                                 f"styles.{key} 必须是数值"
                             )
+                    if component_type == "Button" and "fontColor" in styles:
+                        warnings.append(
+                            f"第 {number} 行：Button {component_id!r} 设置了 "
+                            "styles.fontColor；部分端侧版本可能被主题色覆盖，"
+                            "需要精确字色时可改用可点击 Row + Text"
+                        )
 
                 for node in walk(component):
                     bound_path = node.get("path")

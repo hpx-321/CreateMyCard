@@ -1,5 +1,7 @@
 # 扩展组件字段参考
 
+> **用途：** 本文件只列组件专有字段、枚举和兼容说明。通用字段和 `styles` 见 [common-fields-and-styles.md](common-fields-and-styles.md)，组件选型先看 [extended-component-catalog.md](extended-component-catalog.md)。
+
 ## 目录
 
 1. 使用说明
@@ -16,7 +18,8 @@
 - “动态”表示字段可使用字面量、DataModel 路径绑定或符合类型的表达式。
 - 表格中的“默认值”来自当前文档或渲染器实现；不需要覆盖默认行为时可以省略。
 - 标记为“样式”的字段必须放入 `styles`。
-- 当前原生扩展组件使用不带 `Extended.` 的名称。只有本文件明确写为 `Extended.*` 的自定义组件保留前缀。
+- 新生成 DSL 默认使用简名组件。旧文档中的 `Extended.*` 作为兼容输入识别，除非用户明确要求旧协议形式。
+- 更新后的项目文档存在两类字段归属写法：单组件 Reference 常把布局字段写在顶层，聚合 Schema 可能把 `justifyContent`、`alignItems`、`listDirection`、`scrollBar`、`columnsTemplate` 等列在 `styles` 内。按 [source-decisions.md](source-decisions.md) 的优先级，生成时以组件单页 Reference 为准，并保持同一 DSL 内只写一种位置，不双写。
 
 ## 2. 布局组件
 
@@ -35,6 +38,8 @@
 {"id":"root","component":"Column","children":["header","body"],"itemMargin":12,"alignItems":"start","styles":{"width":"100%","padding":16}}
 ```
 
+文档优先级：组件单页 Reference 将 `justifyContent`/`alignItems` 定义为顶层字段，新生成按顶层写法；若目标端只接受聚合 Schema 的 `styles` 写法，需在修复时整体迁移，不能双写。
+
 ### 2.2 `Row`
 
 横向排列子组件。
@@ -48,6 +53,8 @@
 | `wrap` | string | `noWrap` | `noWrap`、`wrap` |
 
 桌面卡片默认使用 `noWrap`，并为可能变长的文本设置宽度约束和省略号。
+
+文档优先级：组件单页 Reference 将 `justifyContent`/`alignItems` 定义为顶层字段，新生成按顶层写法；若目标端只接受聚合 Schema 的 `styles` 写法，需在修复时整体迁移，不能双写。
 
 ### 2.3 `List`
 
@@ -78,6 +85,8 @@
 
 注意 `paraller` 是当前协议文档与 Schema 中的实际拼写。不要擅自改成通常的英文单词 `parallel`。
 
+文档优先级：组件单页 Reference 将 `listDirection`、`scrollBar`、`nestedScroll` 定义为顶层字段，新生成按顶层写法；桌面卡片生成时优先显式设置 `scrollBar:"off"`。
+
 ### 2.4 `Grid`
 
 网格布局。
@@ -91,6 +100,8 @@
 | `rowsGap` | number|string | `0` | 行间距，必须非负 |
 
 不要使用 CSS 的 `repeat(2, 1fr)`，改为 `"1fr 1fr"`。
+
+文档优先级：组件单页 Reference 将 `columnsTemplate`、`rowsTemplate`、`columnsGap`、`rowsGap` 定义为顶层字段，新生成按顶层写法；不要使用 CSS `repeat()`，不要双写到 `styles`。
 
 ### 2.5 `Stack`
 
@@ -177,9 +188,16 @@
 | `enabled` | DynamicBoolean | 否 | 默认 `true` |
 | `action` | object | 否 | 目录动作；只有已知动作契约时生成 |
 
-专有样式：`fontSize`、`fontWeight`、`maxFontSize`、`fontScaleMode`、`minFontScale`、`maxFontScale`。
+专有样式：`fontColor`、`fontSize`、`fontWeight`、`maxFontSize`、`fontScaleMode`、`minFontScale`、`maxFontScale`。部分端侧版本可能用主题色覆盖 `Button.styles.fontColor`；当用户明确要求按钮文字必须为某个颜色，或前一次渲染确认 Button 字色不生效时，改用可点击 `Row` 承载背景/边框，内部 `Text` 设置 `fontColor`、`width:"100%"`、`textAlign:"center"`。
 
 `fontScaleMode` 可用 `followSystem`、`custom`。点击行为优先使用协议事件结构，不能把标准组件的 `child` 写法套到扩展 `Button`。
+
+可点击容器兜底示例：
+
+```json
+{"id":"actionPill","component":"Row","children":["actionText"],"justifyContent":"center","alignItems":"center","onClick":[{"call":"handleAction"}],"styles":{"width":"100%","height":36,"borderRadius":18,"backgroundColor":"#26FFFFFF","borderWidth":1,"borderColor":"#66FFFFFF"}}
+{"id":"actionText","component":"Text","content":{"path":"/action/label"},"styles":{"width":"100%","fontSize":14,"fontWeight":"bold","fontColor":"#FFFFFFFF","textAlign":"center","maxLines":1,"textOverflow":"ellipsis"}}
+```
 
 ## 4. 输入与选择组件
 
@@ -271,22 +289,22 @@
 
 ## 6. 自定义扩展组件
 
-这些组件保留 `Extended.` 前缀。普通桌面卡片只有在需求明确时才使用。
+这些组件在文档中存在简名与 `Extended.*` 两种写法。新生成 DSL 优先使用聚合 Schema 简名；普通桌面卡片只有在需求明确时才使用。
 
-### 6.1 `Extended.Select`
+### 6.1 `Select` / `Extended.Select`
 
 | 顶层字段 | 类型 | 说明 |
 |---|---|---|
 | `options` | object[] | 选项；每项至少含 `value`，可含 `icon` |
 | `selected` | DynamicNumber | 选中索引，默认 `-1` |
 | `value` | DynamicString | 当前显示值 |
-| `onChange` | EventHandler[] | 选择变化；当前实现向事件系统派发 `onChange` |
+| `onSelect` | EventHandler[] | 选择变化；简名 `Select` 按聚合 Schema 使用 `onSelect`。旧 `Extended.Select` 文档中的 `change` 事件仅作为兼容背景，新生成不使用 `onChange` |
 
 可配置字段包括：`font`、`fontColor`、`selectedOptionBgColor`、`selectedOptionFont`、`selectedOptionFontColor`、`optionBgColor`、`optionFont`、`optionFontColor`、`space`、`arrowPosition`、`menuAlign`、`optionWidth`、`optionHeight`、`menuBackgroundColor`、`divider`。
 
 `arrowPosition` 可用 `START`、`END`；`menuAlign` 可用 `START`、`CENTER`、`END` 或对齐对象。
 
-### 6.2 `Extended.Navigation`
+### 6.2 `Navigation` / `NavContainer`
 
 | 顶层字段 | 类型 | 必填 | 说明 |
 |---|---|---:|---|
@@ -296,18 +314,18 @@
 
 常用专有样式：`backgroundColor`。
 
-### 6.3 `Extended.Tabs`
+### 6.3 `Tabs` / `Extended.Tabs`
 
 | 顶层字段 | 类型 | 默认值 | 说明 |
 |---|---|---|---|
-| `children` | ChildList | 无 | 通常引用 `Extended.TabContent` |
+| `children` | ChildList | 无 | 通常引用 `TabContent` |
 | `barPosition` | string | `start` | `start`、`end` |
 | `vertical` | DynamicBoolean | `false` | 是否纵向 |
 | `scrollable` | DynamicBoolean | 无 | 页签栏是否可滚动 |
 | `tabIndex` | DynamicNumber | `0` | 当前索引 |
 | `onChange` | EventHandler[] | 无 | 页签切换 |
 
-### 6.4 `Extended.TabContent`
+### 6.4 `TabContent` / `Extended.TabContent`
 
 | 顶层字段 | 类型 | 说明 |
 |---|---|---|
@@ -319,7 +337,7 @@
 
 专有样式：`selectColor`、`unselectedColor`、`defaultBackgroundColor`、`selectBackgroundColor`、`defaultBorderColor`、`selectBorderColor`、`fontSize`、`fontWeight`、`iconSize`、`space`。
 
-### 6.5 `Extended.Web`
+### 6.5 `Web` / `Extended.Web`
 
 | 顶层字段 | 类型 | 必填 | 说明 |
 |---|---|---:|---|

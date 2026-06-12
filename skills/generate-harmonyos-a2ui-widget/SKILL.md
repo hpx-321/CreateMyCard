@@ -1,106 +1,59 @@
 ---
 name: generate-harmonyos-a2ui-widget
-description: 生成、审查和修复用于 AI 桌面卡片与元服务卡片技术穿刺的鸿蒙 A2UI v0.9 JSONL DSL。当 Agent 需要把用户的自然语言卡片需求转换为可由华为 GenUI/A2UIRender 渲染的 createSurface、updateComponents、updateDataModel 消息时使用，尤其适用于鸿蒙扩展组件、DataModel 动态绑定、模板列表、表达式、自适应布局和流式输出场景。
+description: 生成、审查和修复用于 AI 桌面卡片与元服务卡片场景的 HarmonyOS A2UI v0.9 JSONL DSL。用于把任意信息展示、轻操作、列表、仪表、条件状态等需求泛化为 1×2、2×2、2×4、4×4 桌面卡片；同时根据当前 Docs 项目的扩展组件文档和 Schema 处理字段归属、组件名、数据绑定、视觉对比和端侧渲染差异。
 ---
 
-# 生成鸿蒙 A2UI 桌面卡片
+# 生成 HarmonyOS A2UI 桌面卡片
 
-生成可直接交给渲染器处理的 A2UI JSONL。当文档与实现不一致时，以当前鸿蒙渲染器源码的实际行为为准。
+生成可直接交给 GenUI/A2UIRender 渲染的 A2UI JSONL。本 Skill 已把生成所需的协议、组件字段、布局模板、示例资源和校验脚本收敛到本目录内；日常使用先从 [参考入口](references/README.md) 进入对应模块。
 
-## 默认目标
+## 核心原则
 
-- 协议版本固定使用 `v0.9`。
-- 桌面卡片默认使用 `catalogId: "ohos.a2ui.extended.catalog"`，除非需求明确指定标准组件目录。
-- 只使用渲染器已注册的组件名。扩展组件目录中的原生组件使用不带前缀的名称，例如 `Text`、`Button`、`Column`、`Progress`；不要生成 `Extended.Text` 或 `Extended.Button`。
-- 输出格式为 JSONL：每行一个完整 JSON 对象，不得包含 Markdown 代码围栏、注释、解释文字、尾随逗号或跨行的不完整对象。
-- 默认只生成 UI DSL 和具有代表性的初始数据。除非需求明确要求，否则不要虚构 `DataBindingPlan`、查询命令、权限、刷新策略或能力标识。
+- **外部开发文档优先。** 当 Skill 内规则与当前 Docs 开发文档、组件 Reference 或 Schema 冲突时，以外部开发文档为准；随后按 [source-decisions.md](references/source-decisions.md) 同步修订本地参考。
+- 先抽象需求的信息角色，再选择模板：`primary`（主指标/结论）、`context`（解释/来源/时间）、`details`（2-5 个辅助槽位或列表）、`action`（轻操作）、`state`（加载/空态/异常）。
+- **先整体结构排版，后组件内部细节。** 生成 `updateComponents` 前必须先确定卡片尺寸、根容器、主信息区/上下文区/操作区的槽位关系和组件邻接表；只有结构稳定后，才填写每个组件的 `content`、`styles`、事件和数据绑定。
+- 示例只提供结构参考，不复用示例业务、文案或固定色值。天气、日程、健康、设备、金融、快递等都应映射到同一套信息角色。
+- 不默认生成 2×2。按信息槽位、操作数量、可见文本行、组件估算选择最小可承载尺寸。
+- 若端侧对某个组件样式存在版本差异，优先使用更可控的组合结构。例如需要精确 CTA 字色时，可用可点击 `Row` + `Text` 代替原生 `Button`。
 
-生成 DSL 前先阅读 [协议与生成规则](references/protocol-and-generation-rules.md) 和 [组件通用字段与样式](references/common-fields-and-styles.md)。使用 [扩展组件索引](references/extended-component-catalog.md) 完成选型，再按实际选用的组件读取 [扩展组件字段参考](references/component-field-reference.md) 中对应章节。需要完整消息结构时阅读 [桌面卡片示例](references/widget-examples.jsonl)。
+## 生成 SOP（强制执行）
 
-## 执行流程
+1. 从 [references/README.md](references/README.md) 确认阅读路线；若发现与当前外部 Docs 开发文档冲突，按 [source-decisions.md](references/source-decisions.md) 处理。
+2. 阅读 [capability.md](references/capability.md) 判断需求是否可满足。不可满足时说明原因和替代方案，停止生成。
+3. 阅读 [template.md](references/template.md) 确定尺寸、布局和视觉策略。未指定尺寸时必须按信息量、组件数量、操作数量和排版结构选择最小可承载尺寸。
+4. 字段或组件不确定时，按 [extended-component-catalog.md](references/extended-component-catalog.md) → [component-field-reference.md](references/component-field-reference.md) → [common-fields-and-styles.md](references/common-fields-and-styles.md) 查证。
+5. 阅读 [guide.md](references/guide.md) 编写 DSL：先画整体布局骨架和扁平组件邻接表，再补组件内部字段与 DataModel，并按 `createSurface` → `updateComponents` → `updateDataModel` 输出。
+6. 运行 `python scripts/validate_a2ui_jsonl.py <输出文件>`，修复所有错误；视觉对比失败按高优先级设计错误处理。
 
-1. 将用户需求拆解为：
-   - 卡片用途；
-   - 目标尺寸；
-   - 静态文案；
-   - 动态字段；
-   - 重复集合；
-   - 交互行为；
-   - 与需求范围匹配的空态、加载态和错误态。
-2. 编写组件前先设计稳定的 DataModel。
-   - 使用语义明确且不依赖数据源实现的路径，例如 `/weather/temperatureLabel`、`/tasks/items`。
-   - 格式可能变化时，将用于展示的字符串与原始值分开保存。
-   - 重复内容使用数组。
-   - 为 UI 引用的每个路径提供有代表性的初始值。
-3. 设计紧凑的组件树。
-   - 只定义一个入口根组件，id 固定为 `root`。
-   - 使用扁平邻接表，通过 id 引用子组件。
-   - 优先使用 `Column`、`Row`、`Text`、`Image`、`Progress`、`List`、`Grid`、`Stack`、`If`。
-   - 桌面卡片应便于快速扫读。除非需求明确要求，否则避免导航、表单、网页、标签页和音视频组件。
-   - 长文本使用 `maxLines` 和 `textOverflow` 限制。
-4. 为每个选用组件核对字段。
-   - 先添加必填的 `id` 和 `component`。
-   - 区分组件顶层字段与 `styles` 字段，不得凭经验移动属性。
-   - 只对声明为动态类型的字段使用路径绑定或表达式。
-   - 只使用字段参考中列出的枚举值；无依据时省略可选字段。
-   - 交互组件必须核对事件名、EventHandler 数组结构和已注册的 `call`。
-5. 按以下顺序输出消息：
-   - `createSurface`；
-   - 一条或多条 `updateComponents`；
-   - 一条初始化 `updateDataModel`。
-6. 绑定动态值。
-   - 直接读取数据时优先使用 `{ "path": "/..." }`。
-   - 仅在短文本拼接、条件文案、颜色模式或断点判断中使用 `{{ ... }}` 表达式。
-   - 重复数组使用模板子节点，不要生成固定数量的重复行。
-7. 自检所有组件引用、数据路径、字段类型、字段层级和组件目录专属属性。
-8. 有输出路径时，将 JSONL 写入文件并执行：
+## 默认约束
 
-```powershell
-python scripts/validate_a2ui_jsonl.py <JSONL文件路径>
-```
+- 协议版本 `v0.9`，Catalog `ohos.a2ui.extended.catalog`。
+- 扩展组件优先使用当前聚合 Schema/Reference 中的简名：`Text`、`Button`、`Column`、`Progress`、`Select`、`Tabs`、`TabContent`、`Navigation`/`NavContainer`、`Web` 等；旧式 `Extended.*` 只作为兼容输入处理，不作为新生成默认。
+- 输出格式为 JSONL：每行一个完整 JSON 对象，无 Markdown 围栏、注释、尾随逗号。
+- 只生成 UI DSL + 代表性初始数据；不虚构数据绑定计划、查询命令、权限或刷新策略。
+- 示例数据必须虚构，不暴露真实隐私。
+- 字段层级以 [guide.md](references/guide.md) 的兼容矩阵和 [component-field-reference.md](references/component-field-reference.md) 为准；布局字段若存在顶层/`styles` 差异，生成时选择一种并保持一致，不双写。
+- 视觉对比问题不是“可选优化”。若 CTA 在局部背景上不清晰，或按钮文字与按钮底色不清晰，视为高优先级错误，生成前必须修正。
+- 所有可见层都必须有区分度：文字层清晰可读，区域层与外层背景分离，背景层不能抢占正文与操作区。
+- CTA 必须同时通过内对比（按钮文字与按钮底色）和外对比（按钮轮廓与局部背景）。
 
-修复所有错误。警告应作为设计复核项处理。
+## 参考文件索引
+
+| 模块 | 文件 | 用途 |
+|------|------|------|
+| 入口 | [references/README.md](references/README.md) | 阅读路线、模块职责、闭环边界 |
+| 能力 | [references/capability.md](references/capability.md) | 能力范围、不支持场景、替代方案 |
+| 布局 | [references/template.md](references/template.md) | 尺寸模板、2×2 泛化规律、配色、背景图、反模式 |
+| 生成 | [references/guide.md](references/guide.md) | DSL 生成步骤、字段层级、自检清单、修复对照 |
+| 协议 | [references/protocol-core.md](references/protocol-core.md) | 消息、邻接表、DataModel、表达式、事件、多设备规则 |
+| 通用 | [references/common-fields-and-styles.md](references/common-fields-and-styles.md) | 通用字段、`styles`、背景/图片/渐变/阴影 |
+| 选型 | [references/extended-component-catalog.md](references/extended-component-catalog.md) | 常用组件快速索引 |
+| 字段 | [references/component-field-reference.md](references/component-field-reference.md) | 组件专有字段定义 |
+| 决策 | [references/source-decisions.md](references/source-decisions.md) | 外部开发文档引入策略与冲突优先级 |
+| 模板参考 | [references/dsl-templates/](references/dsl-templates/) | 三个 2×2 DSL 模板与资源 |
 
 ## 输出约定
 
-用户只要求 DSL 时，仅返回 JSONL，不附加其他文字。
-
-用户同时要求解释时，将解释与原始 JSONL 文件分开，绝不在 JSONL 消息流中混入说明文字。
-
-最小消息结构：
-
-```json
-{"version":"v0.9","createSurface":{"surfaceId":"example-widget","catalogId":"ohos.a2ui.extended.catalog","theme":{"primaryColor":"#0A59F7"}}}
-{"version":"v0.9","updateComponents":{"surfaceId":"example-widget","components":[{"id":"root","component":"Column","children":["title"]},{"id":"title","component":"Text","content":{"path":"/title"}}]}}
-{"version":"v0.9","updateDataModel":{"surfaceId":"example-widget","path":"/","value":{"title":"示例"}}}
-```
-
-## 桌面卡片约束
-
-- 每个 Surface 只承载一张逻辑卡片。
-- `surfaceId` 使用稳定的短横线命名；组件 id 使用稳定且能表达用途的名称。
-- 根组件宽度设置为 `"100%"`；只有已知目标卡片尺寸时才约束高度。
-- 通过 `itemMargin`、`space`、`styles.padding` 明确设置间距。
-- `fontSize`、`minFontSize`、`maxFontSize` 使用数值，不得写成 `"16fp"`。
-- 颜色使用 `#RRGGBB` 或 `#AARRGGBB`。
-- 通用尺寸、间距、背景、边框、阴影、显隐和裁剪字段放入 `styles`。
-- `accessibility.label` 和 `accessibility.description` 支持动态字符串；只为需要朗读的内容添加。
-- 仅图标控件和重要数值摘要应提供无障碍标签。
-- 最近一次成功数据的保留策略由 DSL 外部的运行时负责，不要把刷新执行或设备数据访问编码进 A2UI 消息。
-- 示例数据不得暴露真实设备隐私，使用明显虚构的数据。
-
-## 修复规则
-
-审查已有 DSL 时：
-
-- 修复扩展组件目录中误用的标准组件属性：
-  - `Text.text` 改为 `Text.content`
-  - `Image.url` 改为 `Image.src`
-  - 标准 `Button.child` 改为扩展 `Button.label`
-  - `Row.justify` 改为 `Row.justifyContent`
-  - `Row.align` 改为 `Row.alignItems`
-- 组件规范要求视觉属性位于 `styles` 时，将属性移入 `styles`。
-- 将不存在的组件前缀改为渲染器实际注册的组件名。
-- 补齐被引用但未定义的组件，以及绑定路径缺少的初始 DataModel 字段。
-- 所有消息必须使用同一个 `surfaceId`。
-- 不要为了让错误 DSL 通过而静默切换组件目录。
+- 用户只要 DSL：仅返回 JSONL，不附加解释文字。
+- 用户同时要求解释：解释与 JSONL 分开，不混入消息流。
+- 有输出路径：写入后执行校验脚本。
